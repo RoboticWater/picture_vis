@@ -1,74 +1,100 @@
 public class UserItem {
-  private HashMap<String, Integer> images;
-  private int[] numPics;
-  private Day startDay;
+  private ArrayList<ImageValue> images;
+  private ArrayList<ImageValue>[] imgDist;
   private String user;
-  private PVector pos;
+  private PVector pos, vel;
   private float size, curSize = 0;
   private float lineSize, curLineSize;
   private float textAlpha = 0;
-  private color backgroundCol, cBGC;
+  private color backgroundCol, cBGC, tBGC;
   private color textCol, cTC;
   private int state = 0;
   private int days;
   private int timer = 0;
+  private int curColor = 1;
+  private int num;
   public  boolean hover = false;
   public  boolean zoomed = false;
-  public UserItem(String user, float x, float y, int days) {
-    this(user, x, y, textWidth(user) + 20, textWidth(user) + 20, days);
+  public  boolean outline = false;
+  public UserItem(String user, float x, float y, int days, ArrayList<ImageValue>[] imgDist, ArrayList<ImageValue> images) {
+    this(user, x, y, textWidth(user) + 20, textWidth(user) + 20, days, imgDist, images);
   }
-  public UserItem(String user, float x, float y, float size, float lineSize, int days) {
+  public UserItem(String user, float x, float y, float size, float lineSize, int days, ArrayList<ImageValue>[] imgDist, ArrayList<ImageValue> images) {
     this.user = user;
     this.pos = new PVector(x, y);
     this.size = size;
     this.lineSize = lineSize;
     this.curLineSize = size / 2;
     this.days = days;
-    this.numPics = new int[days];
-    for (int i = 0; i < days; i++) {
-      numPics[i] = 20;
-    }
-    this.backgroundCol = #000000;
-    this.textCol = #ffffff;
-    this.startDay = Day.MONDAY;
+    this.imgDist = imgDist;
+    this.backgroundCol = images.get(0).val;
+    this.tBGC = backgroundCol;
+    this.outline = brightness(backgroundCol) - saturation(backgroundCol) > 200;
+    this.textCol = outline ? #000000 : #ffffff;
+    this.images = images;
+    this.vel = PVector.fromAngle(random(0, TWO_PI));
+    this.num = glNum++;
   }
   public void draw() {
     update();
-    if (state > 2) {
+    pushMatrix();
+    translate(pos.x, pos.y);
+    if (frameCount % 15 == 0 && curColor < images.size()) {
+      tBGC = avgColor(images, ++curColor);
+      outline = brightness(tBGC) - saturation(tBGC) > 200;
+    }
+    backgroundCol = lerpColor(backgroundCol, tBGC, 0.1);
+    if (state > 2 || state == -1) {
       strokeWeight(0.5);
       pushMatrix();
-      translate(pos.x, pos.y);
       for (int i = 0; i < days; i++) {
-        rotate(TWO_PI / days);
         stroke(0);
         line(0, 0, 0, -curLineSize);
         noStroke();
         fill(0);
+        if (i == 0) {
+          rect(0, 10-curLineSize, 5, 5);
+        }
+        text(str(i + 1), 0, -10 - curLineSize);
         float rot = -PI / 160;
         float off = 0;
-        for (int j = 0; j < numPics[i]; j++) {
+        for (int j = 0; j < imgDist[i].size(); j++) {
+          fill(imgDist[i].get(j).val);
           pushMatrix();
           if (rot / (TWO_PI / days - PI / 23) > 1) {
             rot = -PI / 160;
             off++;
           }
-          rot += PI / (40 - 2 * off);
+          rot += PI / (35 - 2 * off);
+          //if (rot / (TWO_PI / days - PI / 23) > 1) {
+          //  rot = -PI / 160;
+          //  off++;
+          //}
+          //rot += PI / (40 - 2 * off);
           rotate(rot);//(j % days + 0.5) * TWO_PI / (days * 7));
-          translate(0, 3.8 * off - curLineSize);//5 * (int(j / days) + 0.2) - curLineSize);
-          ellipse(0, 0, 3, 3);
+          translate(0, 6.8 * off - curLineSize);//5 * (int(j / days) + 0.2) - curLineSize);
+          
+          ellipse(0, 0, 10, 10);
           popMatrix();
         }
+        rotate(TWO_PI / days);
       }
       popMatrix();
     }
-    noStroke();
     fill(cBGC);
-    ellipse(pos.x, pos.y, curSize, curSize);
+    if(outline) {
+      stroke(textCol);
+      strokeWeight(1);
+    } else {
+      noStroke();
+    }
+    ellipse(0, 0, curSize, curSize);
     fill(cTC, textAlpha);
-    text(user, pos.x, pos.y + textSize / 4);
+    text(user, 0, 0 + textSize / 4);
+    popMatrix();
   }
   private void update() {
-    hover = dist((pos.x * scale + world.x), (pos.y * scale + world.y), mouseX, mouseY) < scale * size / 2;
+    hover = dist(width / 2 + (pos.x + world.x) * scale, height / 2 + (pos.y + world.y) * scale, mouseX, mouseY) < scale * size / 2;
     if (hover) {
       cTC = lerpColor(cTC, backgroundCol, 0.2);
       cBGC = lerpColor(cBGC, textCol, 0.2);
@@ -76,61 +102,36 @@ public class UserItem {
       cTC = lerpColor(cTC, textCol, 0.2);
       cBGC = lerpColor(cBGC, backgroundCol, 0.2);
     }
+    if(!hover && !zoomed) {
+      if (move) pos.add(vel);
+      else pos.lerp(new PVector((num % 10 - 5) * 2 * size, -int(num / 10) * 2 * size), 0.1);
+      if (dist(pos.x, pos.y, 0, 0) > 2500) vel.mult(-1);
+    }
     if (state == 0) {
       curSize = lerp(curSize, size, 0.1);
       textAlpha = lerp(textAlpha, 255, 0.07);
-      if (size - curSize < 0.01) state++;
+      if (size - curSize < 0.05) state++;
     } else if (state == 1) {
       if (zoomed) {
         state++;
-        timer = millis() + 700;
+        timer = millis() + 100;
       }
     } else if (state == 2) {
+      fullFocus = true;
       if(millis() > timer) state++;
     } else if (state == 3) {
       curLineSize = lerp(curLineSize, lineSize, 0.1);
       if (lineSize - curLineSize < 0.01) state++;
-    }
-  }
-  public String dayString(Day d, boolean full) {
-    if (full) {
-      switch (d) {
-        case SUNDAY:
-          return "Sunday";
-        case MONDAY:
-          return "Monday";
-        case TUESDAY:
-          return "Tuesday";
-        case WEDNESDAY:
-          return "Wednesday";
-        case THURSDAY:
-          return "Thursday";
-        case FRIDAY:
-          return "Friday";
-        case SATURDAY:
-          return "Saturday";
-        default:
-          return "";
-      }
-    } else {
-      switch (d) {
-        case SUNDAY:
-          return "Sun.";
-        case MONDAY:
-          return "Mon.";
-        case TUESDAY:
-          return "Tues.";
-        case WEDNESDAY:
-          return "Wed.";
-        case THURSDAY:
-          return "Thur.";
-        case FRIDAY:
-          return "Fri.";
-        case SATURDAY:
-          return "Sat.";
-        default:
-          return "";
-      }
+    } else if (state == 4) {
+       if (!zoomed) {
+         state++;
+         timer = millis() + 200;
+       }
+    } else if (state == 5) {
+      if(millis() > timer) state++;
+    } else if (state == 6) {
+      curLineSize = lerp(curLineSize, -0.1, 0.1);
+      if (curLineSize < -0.05) state = 1;
     }
   }
 }
